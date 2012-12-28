@@ -6,11 +6,20 @@ The design of `LXReceiptStore` is base on block based callback.
 
 Receipt is store in sqlite database, unencrypted.
 
-The reason this setup is possible is because receipt are cryptographically signed by Apple. The framework check that this receipt and accompanying data in sqlite is not compromised and make attempts to verify with apple verification receipt server. (Possible to make the latter optional but users could mess with the framework by tweaking the clock.)
+The reason this setup is possible is because receipt are:
+
+1. Cryptographically signed by Apple
+2. Contains device specific information (UUID, UUID for vendor)
+
+The sqlite database is stored in cache directory. (Not suppose to be backup-able because of point 2)
+
+The framework check that this receipt and accompanying data in sqlite database is not compromised and make attempts to verify with apple verification server. (Possible to make the latter optional but users could mess with the framework by tweaking the clock.)
 
 This is still in development, code are available for review. Use it at your own risk.
 
 Interfaces may drastically change over time. Need serious reviewers and users to push it to mature stage.
+
+Not unit tested yet but must be unit tested before it reach mature stage.
 
 #Getting Started#
 ##Initialization##
