@@ -1,0 +1,3 @@
+[submodule "Vendors/CargoBay"]
+	path = Vendors/CargoBay
+	url = https://github.com/lxcid/CargoBay.git
