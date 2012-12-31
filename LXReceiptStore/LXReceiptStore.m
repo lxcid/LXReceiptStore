@@ -173,12 +173,15 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
                     if (theOrphanPaymentDictionary) {
                         theOrphanPaymentDictionary[@"transactionIdentifier"] = theTransaction.transactionIdentifier;
                     }
-                    [theStrongSelf insertTransactionReceipt:theTransaction.transactionReceipt completionHandler:^(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo, NSError *theError) {
-                        if (theError) {
-                            theOrphanPaymentDictionary[@"error"] = theError;
-                        }
-                        [theQueue finishTransaction:theTransaction];
-                    }];
+                    [theStrongSelf
+                     insertTransactionReceipt:theTransaction.transactionReceipt
+                     success:^(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo) {
+                         [theQueue finishTransaction:theTransaction];
+                     }
+                     failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
+                         theOrphanPaymentDictionary[@"error"] = theError;
+                         [theQueue finishTransaction:theTransaction];
+                     }];
                 } break;
                 case SKPaymentTransactionStateFailed: {
                     NSMutableDictionary *theOrphanPaymentDictionary = [theStrongSelf anyOrphanPaymentDictionaryWithProductIdentifier:theTransaction.payment.productIdentifier quantity:theTransaction.payment.quantity];
@@ -188,9 +191,14 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
                     [theQueue finishTransaction:theTransaction];
                 } break;
                 case SKPaymentTransactionStateRestored: {
-                    [theStrongSelf insertTransactionReceipt:theTransaction.transactionReceipt completionHandler:^(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo, NSError *theError) {
-                        [theQueue finishTransaction:theTransaction];
-                    }];
+                    [theStrongSelf
+                     insertTransactionReceipt:theTransaction.transactionReceipt
+                     success:^(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo) {
+                         [theQueue finishTransaction:theTransaction];
+                     }
+                     failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
+                         [theQueue finishTransaction:theTransaction];
+                     }];
                 } break;
             }
         }
@@ -209,8 +217,8 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
                     NSMutableDictionary *thePaymentDictionary = [theStrongSelf paymentDictionaryWithTransactionID:theTransaction.transactionIdentifier];
                     if (thePaymentDictionary) {
                         [theStrongSelf.paymentDictionaries removeObject:thePaymentDictionary];
-                        LXReceiptStorePaymentCompletionBlock theCompletionHandler = thePaymentDictionary[@"completionHandler"];
-                        theCompletionHandler(theStrongSelf, theTransaction, theTransaction.error);
+                        LXReceiptStoreGenericFailureBlock theFailure = thePaymentDictionary[@"failure"];
+                        theFailure(theStrongSelf, theTransaction.error);
                     }
                 } break;
                 case SKPaymentTransactionStatePurchased: {
@@ -218,8 +226,13 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
                     if (thePaymentDictionary) {
                         [theStrongSelf.paymentDictionaries removeObject:thePaymentDictionary];
                         NSError *theError = thePaymentDictionary[@"error"];
-                        LXReceiptStorePaymentCompletionBlock theCompletionHandler = thePaymentDictionary[@"completionHandler"];
-                        theCompletionHandler(theStrongSelf, theTransaction, theError);
+                        if (theError) {
+                            LXReceiptStoreGenericFailureBlock theFailure = thePaymentDictionary[@"failure"];
+                            theFailure(theStrongSelf, theError);
+                        } else {
+                            LXReceiptStoreAddPaymentSuccessBlock theSuccess = thePaymentDictionary[@"success"];
+                            theSuccess(theStrongSelf, theSuccess);
+                        }
                     }
                 } break;
             }
@@ -393,14 +406,15 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
 #pragma mark - Payment Related Methods
 
 
-- (void)addPayment:(SKPayment *)thePayment completionHandler:(LXReceiptStorePaymentCompletionBlock)theCompletionHandler {
+- (void)addPayment:(SKPayment *)thePayment succcess:(LXReceiptStoreAddPaymentSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure {
     if (![SKPaymentQueue canMakePayments]) {
         NSDictionary *theUserInfo = @{
         NSLocalizedDescriptionKey : @"Fails to add payment because user is not allowed to authorize payment.",
         NSLocalizedFailureReasonErrorKey : @"User is not allowed to authorize payment."
         };
         NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorFailsToAddPayment userInfo:theUserInfo];
-        theCompletionHandler(self, nil, theError);
+        
+        theFailure(self, theError);
         return;
     }
     
@@ -409,76 +423,71 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
      @"productIdentifier" : thePayment.productIdentifier,
      @"quantity" : @(thePayment.quantity)
      } mutableCopy];
-    thePaymentDictionary[@"completionHandler"] = [theCompletionHandler copy];
+    thePaymentDictionary[@"success"] = [theSuccess copy];
+    thePaymentDictionary[@"failure"] = [theFailure copy];
     [self.paymentDictionaries addObject:thePaymentDictionary];
     [self.paymentQueue addPayment:thePayment];
 }
 
 
-- (void)restoreCompletedTransactionsWithCompletionHandler:(LXReceiptStoreRestoreCompletionBlock)theCompletionHandler {
+- (void)restoreCompletedTransactionsWithSuccess:(LXReceiptStoreGenericSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure {
     if (self.isRestorationInProgress) {
         NSDictionary *theUserInfo = @{
         NSLocalizedDescriptionKey : @"Fails to restore completed transaction because another restoration is already in progress.",
         NSLocalizedFailureReasonErrorKey : @"Another restoration is already in progress."
         };
         NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorFailsToRestoreCompletedTransactions userInfo:theUserInfo];
-        theCompletionHandler(self, theError);
+        theFailure(self, theError);
         return;
     }
     self.restorationInProgress = YES;
     
-    __weak __typeof(self) theWeakSelf = self;
-    
-    [self truncateReceiptTableWithCompletionHandler:^(NSError *theError) {
-        __strong __typeof(self) theStrongSelf = theWeakSelf;
-        if (theStrongSelf == nil) {
-            return;
-        }
-        
-        if (theError) {
-            theCompletionHandler(theStrongSelf, theError);
-            return;
-        }
-        
-        [theStrongSelf.cargoBay
-         setPaymentQueueRestoreCompletedTransactionsWithSuccess:^(SKPaymentQueue *theQueue) {
-             __strong __typeof(self) theStrongSelf = theWeakSelf;
-             if (theStrongSelf == nil) {
-                 return;
-             }
-             
-             theCompletionHandler(theStrongSelf, nil);
-             [theStrongSelf.cargoBay setPaymentQueueRestoreCompletedTransactionsWithSuccess:nil failure:nil];
-             theStrongSelf.restorationInProgress = NO;
-         }
-         failure:^(SKPaymentQueue *theQueue, NSError *theError) {
-             __strong __typeof(self) theStrongSelf = theWeakSelf;
-             if (theStrongSelf == nil) {
-                 return;
-             }
-             
-             theCompletionHandler(theStrongSelf, theError);
-             [theStrongSelf.cargoBay setPaymentQueueRestoreCompletedTransactionsWithSuccess:nil failure:nil];
-             theStrongSelf.restorationInProgress = NO;
-         }];
-        
-        
-        [theStrongSelf.paymentQueue restoreCompletedTransactions];
-    }];
+    [self
+     truncateReceiptTableWithSuccess:^(LXReceiptStore *theReceiptStore) {
+         __weak LXReceiptStore *theWeakReceiptStore = theReceiptStore;
+         
+         [theReceiptStore.cargoBay
+          setPaymentQueueRestoreCompletedTransactionsWithSuccess:^(SKPaymentQueue *theQueue) {
+              __strong LXReceiptStore *theStrongReceiptStore = theWeakReceiptStore;
+              if (theStrongReceiptStore == nil) {
+                  return;
+              }
+              
+              theSuccess(theStrongReceiptStore);
+              [theStrongReceiptStore.cargoBay setPaymentQueueRestoreCompletedTransactionsWithSuccess:nil failure:nil];
+              theStrongReceiptStore.restorationInProgress = NO;
+          }
+          failure:^(SKPaymentQueue *theQueue, NSError *theError) {
+              __strong LXReceiptStore *theStrongReceiptStore = theWeakReceiptStore;
+              if (theStrongReceiptStore == nil) {
+                  return;
+              }
+              
+              theFailure(theStrongReceiptStore, theError);
+              [theStrongReceiptStore.cargoBay setPaymentQueueRestoreCompletedTransactionsWithSuccess:nil failure:nil];
+              theStrongReceiptStore.restorationInProgress = NO;
+          }];
+         
+         
+         [theReceiptStore.paymentQueue restoreCompletedTransactions];
+     }
+     failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
+         theFailure(theReceiptStore, theError);
+     }];
 }
 
 
 #pragma mark - Database Queries and Updates Methods
 
 
-- (void)insertTransactionReceipt:(NSData *)theTransactionReceipt completionHandler:(LXReceiptStoreActiveSubscriptionCompletionBlock)theCompletionHandler {
+- (void)insertTransactionReceipt:(NSData *)theTransactionReceipt success:(LXReceiptStoreInsertTransactionDataSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure {
     NSDictionary *thePurchaseInfo = nil;
     
     {
         NSError *theError = nil;
         thePurchaseInfo = [CargoBay _purchaseInfoFromTransactionReceipt:theTransactionReceipt error:&theError];
         if (thePurchaseInfo == nil) {
-            theCompletionHandler(self, nil, nil, theError);
+            theFailure(self, theError);
             return;
         }
     }
@@ -503,7 +512,7 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
         if (![theDatabase executeUpdate:LXReceiptStoreInsertIntoReceiptTableSQL, theTransactionID, theOriginalTransactionID, theProductID, @(thePurchaseDateUnixTime), @(theExpiresDateUnixTime), theTransactionReceipt]) {
             NSError *theError = [theDatabase lastError];
             *theRollback = YES;
-            theCompletionHandler(theStrongSelf, nil, nil, theError);
+            theFailure(theStrongSelf, theError);
             return;
         }
         
@@ -516,33 +525,40 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
         @"transaction_receipt" : theTransactionReceipt
         };
         
-        theCompletionHandler(theStrongSelf, theReceiptDictionary, thePurchaseInfo, nil);
+        theSuccess(theStrongSelf, theReceiptDictionary, thePurchaseInfo);
     }];
 }
 
 
-- (void)truncateReceiptTableWithCompletionHandler:(LXReceiptStoreGenericCompletionBlock)theCompletionHandler {
+- (void)truncateReceiptTableWithSuccess:(LXReceiptStoreGenericSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure {
+    __weak __typeof(self) theWeakSelf = self;
+    
     [self.databaseQueue inTransaction:^(FMDatabase *theDatabase, BOOL *theRollback) {
+        __strong __typeof(self) theStrongSelf = theWeakSelf;
+        if (theStrongSelf == nil) {
+            return;
+        }
+        
         if (![theDatabase executeUpdate:LXReceiptStoreDropReceiptTableSQL]) {
             NSError *theError = [theDatabase lastError];
             *theRollback = YES;
-            theCompletionHandler(theError);
+            theFailure(theStrongSelf, theError);
             return;
         }
         
         if (![theDatabase executeUpdate:LXReceiptStoreCreateReceiptTableSQL]) {
             NSError *theError = [theDatabase lastError];
             *theRollback = YES;
-            theCompletionHandler(theError);
+            theFailure(theStrongSelf, theError);
             return;
         }
         
-        theCompletionHandler(nil);
+        theSuccess(theStrongSelf);
     }];
 }
 
 
-- (void)subscriptionsForProductFamily:(NSString *)theProductFamily date:(NSDate *)theDate completionHandler:(LXReceiptStoreSubscriptionsCompletionBlock)theCompletionHandler {
+- (void)subscriptionsForProductFamily:(NSString *)theProductFamily date:(NSDate *)theDate completionHandler:(LXReceiptStoreSubscriptionsSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure {
     __weak __typeof(self) theWeakSelf = self;
     
     [self.databaseQueue inDatabase:^(FMDatabase *theDatabase) {
@@ -551,13 +567,11 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
             return;
         }
         
-        NSError *theError = nil;
-        
         FMResultSet *theResultSet = [theDatabase executeQuery:LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL, theProductFamily, (long long)[theDate timeIntervalSince1970]];
         
         if (!theResultSet) {
-            theError = [theDatabase lastError];
-            theCompletionHandler(theStrongSelf, nil, theError);
+            NSError *theError = [theDatabase lastError];
+            theFailure(theStrongSelf, theError);
             return;
         }
         
@@ -567,11 +581,11 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
             [theReceiptTableRows addObject:theReceiptTableRow];
         }
         
-        theCompletionHandler(theStrongSelf, theReceiptTableRows, nil);
+        theSuccess(theStrongSelf, theReceiptTableRows);
     }];
 }
 
-- (void)latestSubscriptionForProductFamily:(NSString *)theProductFamily completionHandler:(LXReceiptStoreSubscriptionsCompletionBlock)theCompletionHandler {
+- (void)latestSubscriptionForProductFamily:(NSString *)theProductFamily success:(LXReceiptStoreLatestSubscriptionSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure {
     __weak __typeof(self) theWeakSelf = self;
     
     [self.databaseQueue inDatabase:^(FMDatabase *theDatabase) {
@@ -580,13 +594,11 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
             return;
         }
         
-        NSError *theError = nil;
-        
         FMResultSet *theResultSet = [theDatabase executeQuery:LXReceiptStoreSelectFromReceiptTableWithProductIDSQL, theProductFamily];
         
         if (!theResultSet) {
-            theError = [theDatabase lastError];
-            theCompletionHandler(theStrongSelf, nil, theError);
+            NSError *theError = [theDatabase lastError];
+            theFailure(theStrongSelf, theError);
             return;
         }
         
@@ -595,84 +607,112 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
             NSLocalizedDescriptionKey : @"No subscription available because no receipt is found.",
             NSLocalizedFailureReasonErrorKey : @"No receipt is found."
             };
-            theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
-            theCompletionHandler(theStrongSelf, nil, theError);
+            NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
+            theFailure(theStrongSelf, theError);
             return;
         }
         
         NSDictionary *theReceiptTableRow = [theResultSet resultDictionary];
         
-        theCompletionHandler(theStrongSelf, @[ theReceiptTableRow ], nil);
+        theSuccess(theStrongSelf, theReceiptTableRow);
     }];
 }
 
-- (void)latestActiveSubscriptionForProductFamily:(NSString *)theProductFamily completionHandler:(LXReceiptStoreActiveSubscriptionCompletionBlock)theCompletionHandler {
-    [self latestSubscriptionForProductFamily:theProductFamily completionHandler:^(LXReceiptStore *theReceiptStore, NSArray *theReceiptTableRows, NSError *theError) {
-        if (!theReceiptTableRows) {
-            theCompletionHandler(theReceiptStore, nil, nil, theError);
-            return;
-        }
-        
-        NSDictionary *theReceiptTableRow = [theReceiptTableRows lastObject];
-        
-        NSNumber *theExpiresDate = theReceiptTableRow[@"expires_date"];
-        if (!theExpiresDate || [theExpiresDate isEqual:[NSNull null]]) {
-            NSDictionary *theUserInfo = @{
-            NSLocalizedDescriptionKey : @"No subscription available because the receipt is not an auto-renewable subscription one.",
-            NSLocalizedFailureReasonErrorKey : @"The receipt is not an auto-renewable subscription one."
-            };
-            theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
-            theCompletionHandler(theReceiptStore, nil, nil, theError);
-            return;
-        }
-        
-        NSData *theTransactionReceipt = theReceiptTableRow[@"transaction_receipt"];
-        [theReceiptStore.cargoBay
-         verifyTransactionReceipt:theTransactionReceipt
-         password:theReceiptStore.password
-         success:^(NSDictionary *theResponseObject) {
-             CargoBayStatusCode theStatusCode = (CargoBayStatusCode)[theResponseObject[@"status"] integerValue];
-             switch (theStatusCode) {
-                 case CargoBayStatusOK: {
-                     NSString *theLatestReceipt = theResponseObject[@"latest_receipt"];
-                     if (!theLatestReceipt) {
-                         NSDictionary *theUserInfo = @{
-                         NSLocalizedDescriptionKey : @"No subscription available because the current receipt does not contains the latest receipt.",
-                         NSLocalizedFailureReasonErrorKey : @"The current receipt does not contains the latest receipt."
-                         };
-                         NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
-                         theCompletionHandler(theReceiptStore, nil, nil, theError);
-                         return;
-                     }
-                     NSData *theLatestTransactionReceipt = [CargoBay _dataFromBase64EncodedString:theLatestReceipt];
-                     [self insertTransactionReceipt:theLatestTransactionReceipt completionHandler:^(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo, NSError *theError) {
-                         theCompletionHandler(theReceiptStore, theReceiptTableRow, theReceiptTableRow, theError);
-                     }];
-                 } break;
-                 case CargoBayStatusReceiptValidButSubscriptionExpired: {
-                     NSDictionary *theUserInfo = @{
-                     NSLocalizedDescriptionKey : @"No subscription available because the subscription has expired.",
-                     NSLocalizedFailureReasonErrorKey : @"The subscription has expired."
-                     };
-                     NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
-                     theCompletionHandler(theReceiptStore, nil, nil, theError);
-                 } break;
-                 default: {
-                     NSDictionary *theUserInfo = @{
-                     NSLocalizedDescriptionKey : @"No subscription available because of unknown reason.",
-                     NSLocalizedFailureReasonErrorKey : @"Of Unknown reason."
-                     };
-                     NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorUnknown userInfo:theUserInfo];
-                     theCompletionHandler(theReceiptStore, nil, nil, theError);
-                 } break;
-             }
-             
-             
+- (void)latestActiveSubscriptionForProductFamily:(NSString *)theProductFamily success:(LXReceiptStoreActiveSubscriptionSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure {
+    [self
+     latestSubscriptionForProductFamily:theProductFamily
+     success:^(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow) {
+         NSNumber *theExpiresDate = theReceiptTableRow[@"expires_date"];
+         if (!theExpiresDate || [theExpiresDate isEqual:[NSNull null]]) {
+             NSDictionary *theUserInfo = @{
+             NSLocalizedDescriptionKey : @"No subscription available because the receipt is not an auto-renewable subscription one.",
+             NSLocalizedFailureReasonErrorKey : @"The receipt is not an auto-renewable subscription one."
+             };
+             NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
+             theFailure(theReceiptStore, theError);
+             return;
          }
-         failure:^(NSError *theError) {
-             theCompletionHandler(theReceiptStore, nil, nil, theError);
-         }];
-    }];
+         
+         if (theReceiptStore.password.length == 0) {
+             NSDictionary *theUserInfo = @{
+             NSLocalizedDescriptionKey : @"No subscription available because the shared secret (password) is required for verification.",
+             NSLocalizedFailureReasonErrorKey : @"The shared secret (password) is required for verification."
+             };
+             NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
+             theFailure(theReceiptStore, theError);
+             return;
+         }
+         
+         NSData *theTransactionReceipt = theReceiptTableRow[@"transaction_receipt"];
+         
+         __weak LXReceiptStore *theWeakReceiptStore = theReceiptStore;
+         
+         
+         [theReceiptStore.cargoBay
+          verifyTransactionReceipt:theTransactionReceipt
+          password:theReceiptStore.password
+          success:^(NSDictionary *theResponseObject) {
+              __strong LXReceiptStore *theStrongReceiptStore = theWeakReceiptStore;
+              if (theStrongReceiptStore == nil) {
+                  return;
+              }
+              
+              CargoBayStatusCode theStatusCode = (CargoBayStatusCode)[theResponseObject[@"status"] integerValue];
+              switch (theStatusCode) {
+                  case CargoBayStatusOK: {
+                      NSString *theLatestReceipt = theResponseObject[@"latest_receipt"];
+                      if (!theLatestReceipt) {
+                          NSDictionary *theUserInfo = @{
+                          NSLocalizedDescriptionKey : @"No subscription available because the current receipt does not contains the latest receipt.",
+                          NSLocalizedFailureReasonErrorKey : @"The current receipt does not contains the latest receipt."
+                          };
+                          NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
+                          theFailure(theStrongReceiptStore, theError);
+                          return;
+                      }
+                      NSData *theLatestTransactionReceipt = [CargoBay _dataFromBase64EncodedString:theLatestReceipt];
+                      
+                      [theStrongReceiptStore
+                       insertTransactionReceipt:theLatestTransactionReceipt
+                       success:^(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo) {
+                           theSuccess(theReceiptStore, theReceiptTableRow, theReceiptTableRow);
+                       }
+                       failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
+                           theFailure(theReceiptStore, theError);
+                       }];
+                  } break;
+                  case CargoBayStatusReceiptValidButSubscriptionExpired: {
+                      NSDictionary *theUserInfo = @{
+                      NSLocalizedDescriptionKey : @"No subscription available because the subscription has expired.",
+                      NSLocalizedFailureReasonErrorKey : @"The subscription has expired."
+                      };
+                      NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
+                      theFailure(theStrongReceiptStore, theError);
+                  } break;
+                  default: {
+                      NSDictionary *theUserInfo = @{
+                      NSLocalizedDescriptionKey : @"No subscription available because of unknown reason.",
+                      NSLocalizedFailureReasonErrorKey : @"Of Unknown reason."
+                      };
+                      NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorUnknown userInfo:theUserInfo];
+                      theFailure(theStrongReceiptStore, theError);
+                  } break;
+              }
+              
+              
+          }
+          failure:^(NSError *theError) {
+              __strong LXReceiptStore *theStrongReceiptStore = theWeakReceiptStore;
+              if (theStrongReceiptStore == nil) {
+                  return;
+              }
+              
+              theFailure(theStrongReceiptStore, theError);
+          }];
+     }
+     failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
+         theFailure(theReceiptStore, theError);
+     }];
 }
 
 

@@ -40,46 +40,39 @@ theReceiptStore.password = @"password";
 ````Objective-C
 SKPayment *thePayment = [SKPayment paymentWithProduct:theProduct];
             
-[theReceiptStore addPayment:thePayment completionHandler:^(LXReceiptStore *theReceiptStore, SKPaymentTransaction *thePaymentTransaction, NSError *theError) {
-    if (theError) {
-        NSLog(@"Error: %@", theError);
-        return;
-    }
-                
-    switch (thePaymentTransaction.transactionState) {
-        case SKPaymentTransactionStatePurchased: {
-            NSLog(@"Succeed %@.", thePaymentTransaction.transactionIdentifier);
-        } break;
-		default: {
-            [NSException raise:NSInternalInconsistencyException format:@"Unexpected execution path."];
-        } break;
-    }
-}];
+[theReceiptStore
+ addPayment:thePayment
+ succcess:^(LXReceiptStore *theReceiptStore, SKPaymentTransaction *thePaymentTransaction) {
+     NSLog(@"Purchase Succeed.");
+ }
+ failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
+     NSLog(@"Purchase failed with error: %@", theError);
+ }];
 ````
 
 ##Restore Purchase##
 ````Objective-C
-[theReceiptStore restoreCompletedTransactionsWithCompletionHandler:^(LXReceiptStore *theReceiptStore, NSError *theError) {
-    if (theError) { 
-        NSLog(@"Error: %@", theError);
-		return;
-    }
-	
-	NSLog(@"Restore success.");
-}];
+[theReceiptStore
+ restoreCompletedTransactionsWithSuccess:^(LXReceiptStore *theReceiptStore) {
+     NSLog(@"Restore succeed.");
+ }
+ failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
+     NSLog(@"Restore failed with error: %@", theError);
+ }];
 ````
 
 ##Query for Latest Active Subscription (Will attempts to fetch and store renewed receipt)##
 ````Objective-C
-NSString *theProductFamily = @"com.example.iap.ars.best-internet-tv-ever.%"; // The syntax of SQL LIKE command.
-[theReceiptStore latestActiveSubscriptionForProductFamily:theProductFamily completionHandler:^(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo, NSError *theError) {
-    if (theError) {
-        NSLog(@"Error: %@", theError);
-		NSLog(@"No TV for you. :(");
-		return;
-    }
-		
-    MPMoviePlayerViewController *theMoviePlayerViewController = [[MPMoviePlayerViewController alloc] initWithContentURL:[NSURL URLWithString:@"http://example.com/best-internet-tv-ever"]];
-    [self presentMoviePlayerViewControllerAnimated:theMoviePlayerViewController];
-}];
+NSString *theProductFamily = @"com.example.iap.ars.best-internet-tv-eva.%"; // The syntax of SQL LIKE command.
+[theReceiptStore
+ latestActiveSubscriptionForProductFamily:theProductFamily
+ success:^(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo) {
+	 // BEST INTERNET TV EVA TIME!
+     MPMoviePlayerViewController *theMoviePlayerViewController = [[MPMoviePlayerViewController alloc] initWithContentURL:[NSURL URLWithString:[SettingsManager sharedManager].link]];
+     [self presentMoviePlayerViewControllerAnimated:theMoviePlayerViewController];
+ } failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
+	 NSLog(@"No TV for you. :( ");
+	 NSLog(@"Restore or subscribe.");
+	 NSLog(@"Error: %@", theError);
+ }];
 ````

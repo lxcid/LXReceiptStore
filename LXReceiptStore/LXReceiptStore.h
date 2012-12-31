@@ -28,11 +28,14 @@ typedef NS_ENUM(NSInteger, LXReceiptStoreErrorCode) {
 
 @class LXReceiptStore;
 
-typedef void (^LXReceiptStoreGenericCompletionBlock)(NSError *theError);
-typedef void (^LXReceiptStorePaymentCompletionBlock)(LXReceiptStore *theReceiptStore, SKPaymentTransaction *thePaymentTransaction, NSError *theError);
-typedef void (^LXReceiptStoreRestoreCompletionBlock)(LXReceiptStore *theReceiptStore, NSError *theError);
-typedef void (^LXReceiptStoreSubscriptionsCompletionBlock)(LXReceiptStore *theReceiptStore, NSArray *theReceiptTableRows, NSError *theError);
-typedef void (^LXReceiptStoreActiveSubscriptionCompletionBlock)(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo, NSError *theError);
+typedef void (^LXReceiptStoreGenericSuccessBlock)(LXReceiptStore *theReceiptStore);
+typedef void (^LXReceiptStoreGenericFailureBlock)(LXReceiptStore *theReceiptStore, NSError *theError);
+typedef void (^LXReceiptStoreAddPaymentSuccessBlock)(LXReceiptStore *theReceiptStore, SKPaymentTransaction *thePaymentTransaction);
+typedef void (^LXReceiptStoreInsertTransactionDataSuccessBlock)(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo);
+typedef void (^LXReceiptStoreLatestSubscriptionSuccessBlock)(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow);
+typedef void (^LXReceiptStoreActiveSubscriptionSuccessBlock)(LXReceiptStore *theReceiptStore, NSDictionary *theReceiptTableRow, NSDictionary *PurchaseInfo);
+
+typedef void (^LXReceiptStoreSubscriptionsSuccessBlock)(LXReceiptStore *theReceiptStore, NSArray *theReceiptTableRows);
 
 @interface LXReceiptStore : NSObject
 
@@ -49,11 +52,11 @@ typedef void (^LXReceiptStoreActiveSubscriptionCompletionBlock)(LXReceiptStore *
 
 #pragma mark - Payment Related Methods
 
-- (void)addPayment:(SKPayment *)thePayment completionHandler:(LXReceiptStorePaymentCompletionBlock)theCompletionHandler;
-- (void)restoreCompletedTransactionsWithCompletionHandler:(LXReceiptStoreRestoreCompletionBlock)theCompletionHandler;
+- (void)addPayment:(SKPayment *)thePayment succcess:(LXReceiptStoreAddPaymentSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure;
+- (void)restoreCompletedTransactionsWithSuccess:(LXReceiptStoreGenericSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure;
 
-- (void)insertTransactionReceipt:(NSData *)theTransactionReceipt completionHandler:(LXReceiptStoreActiveSubscriptionCompletionBlock)theCompletionHandler;
+- (void)insertTransactionReceipt:(NSData *)theTransactionReceipt success:(LXReceiptStoreInsertTransactionDataSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure;
 
-- (void)latestActiveSubscriptionForProductFamily:(NSString *)theProductFamily completionHandler:(LXReceiptStoreActiveSubscriptionCompletionBlock)theCompletionHandler;
+- (void)latestActiveSubscriptionForProductFamily:(NSString *)theProductFamily success:(LXReceiptStoreActiveSubscriptionSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure;
 
 @end
