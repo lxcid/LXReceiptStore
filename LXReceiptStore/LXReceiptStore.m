@@ -179,7 +179,9 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
                          [theQueue finishTransaction:theTransaction];
                      }
                      failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
-                         theOrphanPaymentDictionary[@"error"] = theError;
+                         if (theOrphanPaymentDictionary) {
+                             theOrphanPaymentDictionary[@"error"] = theError;
+                         }
                          [theQueue finishTransaction:theTransaction];
                      }];
                 } break;
