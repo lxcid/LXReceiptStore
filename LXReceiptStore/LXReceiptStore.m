@@ -572,6 +572,7 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
         if (!theResultSet) {
             NSError *theError = [theDatabase lastError];
             theFailure(theStrongSelf, theError);
+            [theResultSet close];
             return;
         }
         
@@ -582,6 +583,7 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
         }
         
         theSuccess(theStrongSelf, theReceiptTableRows);
+        [theResultSet close];
     }];
 }
 
@@ -599,6 +601,7 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
         if (!theResultSet) {
             NSError *theError = [theDatabase lastError];
             theFailure(theStrongSelf, theError);
+            [theResultSet close];
             return;
         }
         
@@ -609,12 +612,14 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
             };
             NSError *theError = [NSError errorWithDomain:LXReceiptStoreErrorDomain code:LXReceiptStoreErrorNoSubscriptionAvailable userInfo:theUserInfo];
             theFailure(theStrongSelf, theError);
+            [theResultSet close];
             return;
         }
         
         NSDictionary *theReceiptTableRow = [theResultSet resultDictionary];
         
         theSuccess(theStrongSelf, theReceiptTableRow);
+        [theResultSet close];
     }];
 }
 
