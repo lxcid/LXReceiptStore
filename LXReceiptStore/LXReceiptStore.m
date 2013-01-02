@@ -10,8 +10,10 @@
 #import "FMDatabase.h"
 #import "FMDatabaseQueue.h"
 #import "CargoBay.h"
-#import "CargoBay+PrivateMethods.h"
 #import <StoreKit/StoreKit.h>
+
+extern NSDictionary * CBPurchaseInfoFromTransactionReceipt(NSData *transactionReceiptData, NSError * __autoreleasing *error);
+extern NSData * CBDataFromBase64EncodedString(NSString *base64EncodedString);
 
 // Enforces restoration to 1 at a time.
 
@@ -265,7 +267,7 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
 - (NSDictionary *)purchaseInfoFromReceiptTableRow:(NSDictionary *)theReceiptTableRow error:(NSError *__autoreleasing *)theError {
     NSData *theTransactionReceipt = theReceiptTableRow[@"transaction_receipt"];
     
-    NSDictionary *thePurchaseInfo = [CargoBay _purchaseInfoFromTransactionReceipt:theTransactionReceipt error:theError];
+    NSDictionary *thePurchaseInfo = CBPurchaseInfoFromTransactionReceipt(theTransactionReceipt, theError);
     if (!thePurchaseInfo) {
         return nil;
     }
@@ -487,7 +489,7 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
     
     {
         NSError *theError = nil;
-        thePurchaseInfo = [CargoBay _purchaseInfoFromTransactionReceipt:theTransactionReceipt error:&theError];
+        thePurchaseInfo = CBPurchaseInfoFromTransactionReceipt(theTransactionReceipt, &theError);
         if (thePurchaseInfo == nil) {
             theFailure(self, theError);
             return;
@@ -677,7 +679,7 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
                           theFailure(theStrongReceiptStore, theError);
                           return;
                       }
-                      NSData *theLatestTransactionReceipt = [CargoBay _dataFromBase64EncodedString:theLatestReceipt];
+                      NSData *theLatestTransactionReceipt = CBDataFromBase64EncodedString(theLatestReceipt);
                       
                       [theStrongReceiptStore
                        insertTransactionReceipt:theLatestTransactionReceipt

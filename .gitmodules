@@ -1,6 +1,6 @@
 [submodule "Vendors/CargoBay"]
 	path = Vendors/CargoBay
-	url = https://github.com/lxcid/CargoBay.git
+	url = https://github.com/mattt/CargoBay.git
 [submodule "Vendors/fmdb"]
 	path = Vendors/fmdb
 	url = https://github.com/ccgus/fmdb.git
