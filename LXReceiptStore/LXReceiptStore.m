@@ -25,6 +25,7 @@ static NSString *LXReceiptStoreCreateReceiptTableSQL = @"CREATE TABLE IF NOT EXI
 static NSString *LXReceiptStoreInsertIntoReceiptTableSQL = @"INSERT OR IGNORE INTO `receipt` (`transaction_id`, `original_transaction_id`, `product_id`, `purchase_date`, `expires_date`, `transaction_receipt`) VALUES (?, ?, ?, ?, ?, ?);";
 static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDSQL = @"SELECT * FROM `receipt` WHERE `product_id` LIKE ? ORDER BY `expires_date` DESC LIMIT 1;";
 static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL = @"SELECT * FROM `receipt` WHERE `product_id` LIKE ? AND ? BETWEEN `purchase_date` AND `expires_date` ORDER BY `expires_date` DESC;";
+static NSString *LXReceiptStoreSelectFromReceiptTableSQL = @"SELECT * FROM `receipt`;";
 
 
 @interface LXReceiptStore ()
@@ -722,6 +723,31 @@ static NSString *LXReceiptStoreSelectFromReceiptTableWithProductIDBetweenDateSQL
      failure:^(LXReceiptStore *theReceiptStore, NSError *theError) {
          theFailure(theReceiptStore, theError);
      }];
+}
+
+
+- (NSArray *)dumpReceiptTable {
+    NSMutableArray *theReceipts = [NSMutableArray array];
+    
+    [self.databaseQueue inDatabase:^(FMDatabase *theDatabase) {
+        
+        FMResultSet *theResultSet = [theDatabase executeQuery:LXReceiptStoreSelectFromReceiptTableSQL];
+        
+        if (!theResultSet) {
+            __unused NSError *theError = [theDatabase lastError];
+            [theResultSet close];
+            return;
+        }
+        
+        while ([theResultSet next]) {
+            NSDictionary *theReceiptTableRow = [theResultSet resultDictionary];
+            [theReceipts addObject:theReceiptTableRow];
+        }
+        
+        [theResultSet close];
+    }];
+    
+    return theReceipts;
 }
 
 

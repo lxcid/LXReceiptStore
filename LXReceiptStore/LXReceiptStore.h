@@ -59,4 +59,6 @@ typedef void (^LXReceiptStoreSubscriptionsSuccessBlock)(LXReceiptStore *theRecei
 
 - (void)latestActiveSubscriptionForProductFamily:(NSString *)theProductFamily success:(LXReceiptStoreActiveSubscriptionSuccessBlock)theSuccess failure:(LXReceiptStoreGenericFailureBlock)theFailure;
 
+- (NSArray *)dumpReceiptTable;
+
 @end
