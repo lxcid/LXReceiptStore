@@ -236,7 +236,7 @@ static NSString *LXReceiptStoreSelectFromReceiptTableSQL = @"SELECT * FROM `rece
                             theFailure(theStrongSelf, theError);
                         } else {
                             LXReceiptStoreAddPaymentSuccessBlock theSuccess = thePaymentDictionary[@"success"];
-                            theSuccess(theStrongSelf, theSuccess);
+                            theSuccess(theStrongSelf, theTransaction);
                         }
                     }
                 } break;
